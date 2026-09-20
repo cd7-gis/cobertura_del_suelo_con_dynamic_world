@@ -30,11 +30,11 @@ la carpeta assets del proyecto.
 */
 
 //------------------------------------------------------------------------------------------
-// 1. CARGA DE DATOS
+// 1. CARGA DE DATOS (REEMPLAZAR POR TUS PROPIOS ASSETS EN EARTH ENGINE)
 //------------------------------------------------------------------------------------------
 
-var sanPedrodelosMilagros = ee.FeatureCollection("projects/TU_PROYECTO/assets/san_pedro_de_los_milagros");  // cambiar por la ruta de tu municipio
-var zonaEstudio = ee.FeatureCollection("projects/TU_PROYECTO/assets/zona_estudio");                         // cambiar por la ruta de tu zona de estudio
+var sanPedrodelosMilagros = ee.FeatureCollection("projects/TU_PROYECTO/assets/san_pedro_de_los_milagros"); 
+var zonaEstudio = ee.FeatureCollection("projects/TU_PROYECTO/assets/zona_estudio");
 
 var roi = sanPedrodelosMilagros.geometry();
 var roiZonaEstudio = zonaEstudio.geometry();
@@ -46,13 +46,13 @@ var roiZonaEstudio = zonaEstudio.geometry();
 
 var fechaInicio = '2025-08-01';
 var fechaFin = '2026-08-31';
-var carpetaSalida = 'GEE';    // carpeta de salida en Google Drive
-var crs = 'EPSG:4326';        // sistema de referencia para exportar (EPSG:4326 = WGS84 estandar)
-var escala = 10;              // resolución espacial en metros
+var carpetaSalida = 'GEE';    // Carpeta de salida en Google Drive
+var crs = 'EPSG:4326';        // Sistema de referencia para exportar (EPSG:4326 = WGS84)
+var escala = 10;              // Resolución espacial en metros (Dynamic World = 10m)
 
 
 //------------------------------------------------------------------------------------------
-// 3. CARGA DE IMÁGENES DE DYNAMIC WORLD
+// 3. CARGA Y PROCESAMIENTO DE IMÁGENES DYNAMIC WORLD
 //------------------------------------------------------------------------------------------
 
 var dynamicWorld = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1')
@@ -60,14 +60,24 @@ var dynamicWorld = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1')
   .filterDate(fechaInicio, fechaFin)
   .select('label');
 
-print('Escenas usadas:', dynamicWorld.size());
+print('Escenas encontradas:', dynamicWorld.size());
 
-var coberturaSuelo = dynamicWorld.mode().clip(roi);                        // recorte al municipio
-var coberturaSueloZonaEstudio = coberturaSuelo.clip(roiZonaEstudio);       // recorte a la zona de estudio
+// Cobertura original (Valores de clase: 0 a 8)
+var coberturaBase = dynamicWorld.mode().uint8();
+
+// Recortes para análisis y visualización interna
+var coberturaSuelo = coberturaBase.clip(roi);
+var coberturaSueloZonaEstudio = coberturaSuelo.clip(roiZonaEstudio);
+
+// PREPARACIÓN TÉCNICA PARA EXPORTACIÓN EN GEOTIFF:
+// Se aplica un desplazamiento (+1) a las clases (quedando de 1 a 9).
+// Esto libera el valor 0 para asignarlo como noData transparente y evitar el "efecto isla" en QGIS.
+var coberturaExportMun = coberturaBase.add(1).clip(roi).unmask(0).byte();
+var coberturaExportZE = coberturaBase.add(1).clip(roiZonaEstudio).unmask(0).byte();
 
 
 //------------------------------------------------------------------------------------------
-// 4. CLASES DE COBERTURA DEL SUELO Y COLORES
+// 4. CLASES DE COBERTURA DEL SUELO Y SIMBOLOGÍA (NATIVA 0-8)
 //------------------------------------------------------------------------------------------
 
 var nombres = ['Agua', 'Árboles', 'Pasto', 'Vegetación inundada', 'Cultivos',
@@ -80,24 +90,28 @@ var simb = {min: 0, max: 8, palette: colores};
 
 
 //------------------------------------------------------------------------------------------
-// 5. VISUALIZACIÓN
+// 5. VISUALIZACIÓN EN EL MAPA INTERACTIVO DE GEE
 //------------------------------------------------------------------------------------------
 
 Map.centerObject(sanPedrodelosMilagros, 12);
 Map.addLayer(coberturaSuelo, simb, 'Cobertura San Pedro de los Milagros');
 Map.addLayer(coberturaSueloZonaEstudio, simb, 'Cobertura zona de estudio');
-// el color de los contornos se cambia con el parámetro 'color'
-Map.addLayer(sanPedrodelosMilagros.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'San Pedro de los Milagros');
-Map.addLayer(zonaEstudio.style({color: 'yellow', fillColor: '00000000', width: 2}), {}, 'Zona de estudio');
+
+// Estilo de contornos vectoriales sin relleno
+Map.addLayer(sanPedrodelosMilagros.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'Límite Municipio');
+Map.addLayer(zonaEstudio.style({color: 'yellow', fillColor: '00000000', width: 2}), {}, 'Límite Zona de estudio');
 
 
 //------------------------------------------------------------------------------------------
-// 6. ÁREA POR CLASE DE COBERTURA DEL SUELO (HECTÁREAS)
+// 6. CÁLCULO DE ÁREA POR CLASE DE COBERTURA (HECTÁREAS)
 //------------------------------------------------------------------------------------------
 
 function areaPorClase(img, geom) {
+  // Asegura que solo se procesen clases válidas (0 a 8)
+  var imgMasked = img.updateMask(img.gte(0).and(img.lte(8)));
+
   var s = ee.Image.pixelArea().divide(10000)
-    .addBands(img.rename('clase'))
+    .addBands(imgMasked.rename('clase'))
     .reduceRegion({
       reducer: ee.Reducer.sum().group({groupField: 1, groupName: 'clase'}),
       geometry: geom,
@@ -121,34 +135,46 @@ function areaPorClase(img, geom) {
 
 var tablaMunicipio = areaPorClase(coberturaSuelo, roi);
 var tablaZonaEstudio = areaPorClase(coberturaSueloZonaEstudio, roiZonaEstudio);
+
 print('Áreas municipio (ha):', tablaMunicipio);
 print('Áreas zona de estudio (ha):', tablaZonaEstudio);
 
 
 //------------------------------------------------------------------------------------------
-// 7. EXPORTACIÓN DE RESULTADOS (se ejecutan desde la pestaña Tasks, botón Run)
+// 7. EXPORTACIÓN DE RESULTADOS A GOOGLE DRIVE
 //------------------------------------------------------------------------------------------
 
+// Exportación del raster del Municipio (Clases 1-9, fondo noData: 0)
 Export.image.toDrive({
-  image: coberturaSuelo,
+  image: coberturaExportMun,
   description: 'DW_Municipio',
   folder: carpetaSalida,
   region: roi,
   scale: escala,
   crs: crs,
-  maxPixels: 1e13
+  maxPixels: 1e13,
+  formatOptions: {
+    cloudOptimized: true,
+    noData: 0
+  }
 });
 
+// Exportación del raster de la Zona de Estudio (Clases 1-9, fondo noData: 0)
 Export.image.toDrive({
-  image: coberturaSueloZonaEstudio,
+  image: coberturaExportZE,
   description: 'DW_ZonaEstudio',
   folder: carpetaSalida,
   region: roiZonaEstudio,
   scale: escala,
   crs: crs,
-  maxPixels: 1e13
+  maxPixels: 1e13,
+  formatOptions: {
+    cloudOptimized: true,
+    noData: 0
+  }
 });
 
+// Exportación de tablas estadísticas en formato CSV
 Export.table.toDrive({
   collection: tablaMunicipio,
   description: 'Areas_Municipio',
