@@ -47,7 +47,7 @@ var roiZonaEstudio = zonaEstudio.geometry();
 var fechaInicio = '2025-08-01';
 var fechaFin = '2026-08-31';
 var carpetaSalida = 'GEE';    // carpeta de salida en Google Drive
-var crs = 'EPSG:9377';        // sistema de referencia para exportar (MAGNA-SIRGAS Origen Nacional)
+var crs = 'EPSG:4326';        // sistema de referencia para exportar (EPSG:4326 = WGS84 estandar)
 var escala = 10;              // resolución espacial en metros
 
 
