@@ -74,9 +74,7 @@ han sido validados con datos de campo en esta zona.
 
 ## Cómo citar
 
-Cañas Ospina, C. D. (2026). Cobertura del suelo en San Pedro de los Milagros
-con Dynamic World (v1.0) [Software]. GitHub. 
-
+Cristian David Cañas Ospina. (2026). cd7-gis/cobertura_del_suelo_con_dynamic_world: v1.0.1 - Versión Inicial (Version v1.1.0.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22851772
 
 ---
 
